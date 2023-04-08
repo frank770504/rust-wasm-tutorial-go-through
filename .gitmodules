@@ -1,0 +1,3 @@
+[submodule "www"]
+	path = www
+	url = https://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@github.com/frank770504/rust-wasm-tutorial-www.git
