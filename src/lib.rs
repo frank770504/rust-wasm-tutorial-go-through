@@ -8,6 +8,13 @@ use wasm_bindgen::prelude::*;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+// A macro to provide `println!(..)`-style syntax for `console.log` logging.
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
+
 #[wasm_bindgen]
 extern {
     fn alert(s: &str);
@@ -24,6 +31,15 @@ pub fn greet(name: &str) {
 pub enum Cell {
     Dead = 0,
     Alive = 1,
+}
+
+impl Cell {
+    fn toggle(&mut self) {
+        *self = match *self {
+            Cell::Dead => Cell::Alive,
+            Cell::Alive => Cell::Dead,
+        };
+    }
 }
 
 #[wasm_bindgen]
@@ -52,6 +68,21 @@ impl fmt::Display for Universe {
 impl Universe {
     fn get_index(&self, row: u32, column: u32) -> usize {
         (row * self.width + column) as usize
+    }
+
+    fn get_neighbor_index(&self, row: u32, column: u32,
+                          delta_row: i32, delta_col: i32) -> usize {
+        let safe_delta_row: i32 = (row + self.height) as i32 + delta_row;
+        let safe_delta_col: i32 = (column + self.width) as i32 + delta_col;
+        let neighbor_row = safe_delta_row as u32 % self.height;
+        let neighbor_col = safe_delta_col as u32 % self.width;
+        (neighbor_row * self.width + neighbor_col) as usize
+    }
+
+    fn set_neighbor(&mut self, row: u32, column: u32,
+                    delta_row: i32, delta_col: i32, destiny: Cell) {
+        let idx = self.get_neighbor_index(row, column, delta_row, delta_col);
+        self.cells[idx] = destiny;
     }
 
     fn live_neighbor_count(&self, row: u32, column: u32) -> u8 {
@@ -83,6 +114,14 @@ impl Universe {
                 let cell = self.cells[idx];
                 let live_neighbors = self.live_neighbor_count(row, col);
 
+                //log!(
+                //    "cell[{}, {}] is initially {:?} and has {} live neighbors",
+                //    row,
+                //    col,
+                //    cell,
+                //    live_neighbors
+                //);
+
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
                     // dies, as if caused by underpopulation.
@@ -100,6 +139,8 @@ impl Universe {
                     (otherwise, _) => otherwise,
                 };
 
+                //log!("    it becomes {:?}", next_cell);
+
                 next[idx] = next_cell;
             }
         }
@@ -108,11 +149,12 @@ impl Universe {
     }
 
     pub fn new() -> Universe {
+        utils::set_panic_hook();
         let width = 64;
         let height = 64;
 
         let cells = (0..width * height)
-            .map(|i| {
+            .map(|_i| {
                 if js_sys::Math::random() > 0.5 {
                     Cell::Alive
                 } else {
@@ -158,6 +200,38 @@ impl Universe {
 
     pub fn cells(&self) -> *const Cell {
         self.cells.as_ptr()
+    }
+
+    pub fn toggle_cell(&mut self, row: u32, column: u32) {
+        let idx = self.get_index(row, column);
+        self.cells[idx].toggle();
+    }
+
+    pub fn clear_cell(&mut self) {
+        self.cells = (0..self.width * self.height).map(|_i| Cell::Dead).collect();
+    }
+
+    pub fn rand_reset_cell(&mut self) {
+        self.cells = (0..self.width * self.height)
+            .map(|_i| {
+                if js_sys::Math::random() > 0.5 {
+                    Cell::Alive
+                } else {
+                    Cell::Dead
+                }
+            })
+            .collect();
+    }
+
+    pub fn insert_glider(&mut self, row: u32, column: u32) {
+        self.set_neighbor(row, column, 0, 0, Cell::Dead);
+        self.set_neighbor(row, column, -1, -1, Cell::Dead);
+        self.set_neighbor(row, column, -1, 0, Cell::Alive);
+        self.set_neighbor(row, column, -1, 1, Cell::Dead);
+        self.set_neighbor(row, column, 0, 1, Cell::Alive);
+        self.set_neighbor(row, column, 1, -1, Cell::Alive);
+        self.set_neighbor(row, column, 1, 0, Cell::Alive);
+        self.set_neighbor(row, column, 1, 1, Cell::Alive);
     }
 }
 
